@@ -9,11 +9,13 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.util.*;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 public class BurpExtender implements IBurpExtender, IContextMenuFactory, ActionListener
 {
     public PrintWriter stdout = null;
     public PrintWriter stderr = null;
+    private String LAST_USED_FOLDER = "";
     private IHttpRequestResponse selectedMessage[] = null;
 
     @Override
@@ -42,20 +44,27 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, ActionL
     @Override
     public void actionPerformed(ActionEvent e){
         File saveFile;
-        String saveFilePath = null;
-        JFileChooser fileChooser = new JFileChooser();
+        String saveFilePath;
+        /* Retrieve last saving path */
+        Preferences prefs = Preferences.userRoot().node(getClass().getName());
+        JFileChooser fileChooser = new JFileChooser(prefs.get(LAST_USED_FOLDER, new File(".").getAbsolutePath()));
         byte[] response = this.selectedMessage[0].getResponse();
+        byte[] request = this.selectedMessage[0].getRequest();
+        fileChooser.setSelectedFile(new File(getName(request)));
+
         if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
             saveFile = fileChooser.getSelectedFile();
             saveFilePath = saveFile.getAbsolutePath();
-        }
-        byte[] bodyResponse = Arrays.copyOfRange(response, getBodyOffset(response), response.length);
-        try {
-            FileOutputStream fos = new FileOutputStream(saveFilePath);
-            fos.write(bodyResponse);
-            fos.close();
-        }catch (Exception e1){
-            this.stderr.println(e1);
+            byte[] bodyResponse = Arrays.copyOfRange(response, getBodyOffset(response), response.length);
+            try {
+                FileOutputStream fos = new FileOutputStream(saveFilePath);
+                fos.write(bodyResponse);
+                fos.close();
+            }catch (Exception e1){
+                this.stderr.println(e1);
+            }
+            /*Save new path*/
+            prefs.put(LAST_USED_FOLDER, fileChooser.getSelectedFile().getParent());
         }
     }
 
@@ -78,5 +87,31 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, ActionL
             }
         }
         return -1;
+    }
+
+    /**
+     * Retrieve file name from request
+     * @param request Request array
+     * @return
+     */
+    private String getName(byte[] request){
+        int offset = 0;
+        for (int i=0; i<request.length; i++){
+            /*search newline*/
+            if(request[i] == 13 && request[i+1] ==10){
+                offset = i + 2;
+                break;
+            }
+        }
+        /*From request create new byte array with first line*/
+        byte[] firstLineByteArray = Arrays.copyOfRange(request, 0, offset);
+        /*convert array byte to string*/
+        String firstLineString = new String(firstLineByteArray);
+        /*Split this line by '/' */
+        String[] splitBySlash = firstLineString.split("/");
+        /*get the two last elements and split by space ' ' */
+        String[] splitBySpace = splitBySlash[splitBySlash.length-2].split(" ");
+        /*return name of file in request (remove query string)*/
+        return splitBySpace[0].split("\\?")[0];
     }
 }
